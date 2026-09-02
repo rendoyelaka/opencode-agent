@@ -58,35 +58,9 @@ jobs:
           ANTHROPIC_BASE_URL: https://openrouter.ai/api
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
           ANTHROPIC_API_KEY: ""
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
-          VENICE_API_KEY: ${{ secrets.VENICE_API_KEY }}
         run: |
-          MODELS=(
-            "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
-            "nousresearch/hermes-3-llama-3.1-405b:free"
-            "deepseek/deepseek-r1:free"
-            "nvidia/nemotron-3-ultra-550b-a55b:free"
-            "minimax/minimax-m3:free"
-            "z-ai/glm-5.2:free"
-            "meta-llama/llama-3.3-70b-instruct:free"
-          )
-          SUCCESS=false
-          for MODEL in "${MODELS[@]}"; do
-            echo "Trying model: $MODEL"
-            if opencode run --model "openrouter/$MODEL" --print "${{ steps.task.outputs.task }}" 2>/dev/null; then
-              SUCCESS=true
-              echo "Success with: $MODEL"
-              break
-            else
-              echo "Failed: $MODEL"
-            fi
-          done
-          if [ "$SUCCESS" = false ]; then
-            echo "All models failed"
-            exit 1
-          fi
+          echo "Running task: ${{ steps.task.outputs.task }}"
+          opencode run --auto "${{ steps.task.outputs.task }}"
 
       - name: Push Changes To Private Repo
         working-directory: private-repo
