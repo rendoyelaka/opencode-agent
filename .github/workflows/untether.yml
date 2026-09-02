@@ -62,12 +62,60 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           mkdir -p ~/.untether
-          printf 'default_engine = "opencode"\n\n[transports.telegram]\nbot_token = "%s"\nchat_id = %s\nsession_mode = "chat"\n\n[projects.pipeline]\npath = "%s/private-repo"\ndefault_engine = "opencode"\n\n[cost_budget]\nenabled = false\n' \
-            "$TELEGRAM_BOT_TOKEN" \
-            "$TELEGRAM_CHAT_ID" \
-            "$GITHUB_WORKSPACE" \
-            > ~/.untether/untether.toml
-          echo "Config created:"
+          python3 - << 'PYEOF'
+          import os
+          import toml
+          config = {
+              "default_engine": "opencode",
+              "transports": {
+                  "telegram": {
+                      "bot_token": os.environ["TELEGRAM_BOT_TOKEN"],
+                      "chat_id": int(os.environ["TELEGRAM_CHAT_ID"]),
+                      "session_mode": "chat"
+                  }
+              },
+              "projects": {
+                  "pipeline": {
+                      "path": os.path.join(os.environ["GITHUB_WORKSPACE"], "private-repo"),
+                      "default_engine": "opencode"
+                  }
+              },
+              "cost_budget": {
+                  "enabled": False
+              }
+          }
+          with open(os.path.expanduser("~/.untether/untether.toml"), "w") as f:
+              toml.dump(config, f)
+          print("Config written successfully")
+          PYEOF
+          pip install toml -q
+          python3 - << 'PYEOF'
+          import os
+          import toml
+          config = {
+              "default_engine": "opencode",
+              "transports": {
+                  "telegram": {
+                      "bot_token": os.environ["TELEGRAM_BOT_TOKEN"],
+                      "chat_id": int(os.environ["TELEGRAM_CHAT_ID"]),
+                      "session_mode": "chat"
+                  }
+              },
+              "projects": {
+                  "pipeline": {
+                      "path": os.path.join(os.environ["GITHUB_WORKSPACE"], "private-repo"),
+                      "default_engine": "opencode"
+                  }
+              },
+              "cost_budget": {
+                  "enabled": False
+              }
+          }
+          with open(os.path.expanduser("~/.untether/untether.toml"), "w") as f:
+              toml.dump(config, f)
+          print("Config written successfully")
+          PYEOF
+          echo "=== Config content ==="
           cat ~/.untether/untether.toml
 
       - name: Configure OpenCode
@@ -75,10 +123,21 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           mkdir -p ~/.config/opencode
-          printf '{"providers":{"openrouter":{"apiKey":"%s","baseURL":"https://openrouter.ai/api/v1"}},"model":"openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"}' \
-            "$OPENROUTER_API_KEY" \
-            > ~/.config/opencode/config.json
-          echo "OpenCode config created"
+          python3 -c "
+          import json, os
+          config = {
+              'providers': {
+                  'openrouter': {
+                      'apiKey': os.environ['OPENROUTER_API_KEY'],
+                      'baseURL': 'https://openrouter.ai/api/v1'
+                  }
+              },
+              'model': 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free'
+          }
+          with open(os.path.expanduser('~/.config/opencode/config.json'), 'w') as f:
+              json.dump(config, f)
+          print('OpenCode config written')
+          "
 
       - name: Start Untether
         env:
