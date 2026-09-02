@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   opencode:
-    # Only runs when comment contains /oc
+    # Only runs when comment contains /oc or /opencode
     if: |
       contains(github.event.comment.body, '/oc') ||
       contains(github.event.comment.body, '/opencode')
@@ -22,32 +22,36 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      # Step 1: Checkout the PRIVATE repo using your token
+      # Step 1: Checkout PUBLIC repo first
+      - name: Checkout Public Repo
+        uses: actions/checkout@v4
+
+      # Step 2: Checkout PRIVATE repo using PAT_TOKEN
       - name: Checkout Private Repo
         uses: actions/checkout@v4
         with:
           repository: ${{ secrets.PRIVATE_REPO_NAME }}
-          token: ${{ secrets.GITHUB_PRIVATE_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }}
+          path: private-repo
           fetch-depth: 0
 
-      # Step 2: Setup Node.js for OpenCode
+      # Step 3: Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # Step 3: Install OpenCode
+      # Step 4: Install OpenCode
       - name: Install OpenCode
         run: npm install -g opencode-ai
 
-      # Step 4: Configure Git
+      # Step 5: Configure Git
       - name: Configure Git
         run: |
           git config --global user.email "opencode-bot@github.com"
           git config --global user.name "OpenCode Bot"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_PRIVATE_TOKEN }}@github.com/${{ secrets.PRIVATE_REPO_NAME }}.git
 
-      # Step 5: Extract task from comment
+      # Step 6: Extract task from comment
       - name: Extract Task
         id: task
         run: |
@@ -56,106 +60,90 @@ jobs:
           echo "task=$TASK" >> $GITHUB_OUTPUT
           echo "Task extracted: $TASK"
 
-      # Step 6: Run OpenCode with Priority 1 model (Chat/Info tasks)
+      # Step 7: Run OpenCode with free uncensored models
       - name: Run OpenCode Agent
+        working-directory: private-repo
         env:
-          # OpenRouter - Primary AI
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # OpenRouter - Primary AI (using as Anthropic replacement)
           ANTHROPIC_BASE_URL: https://openrouter.ai/api
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
+          ANTHROPIC_API_KEY: ""
 
-          # HuggingFace - Backup
+          # HuggingFace Backup
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
-          # Groq - Fast Backup
+          # Groq Backup
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
-          # Cerebras - High Limit Backup
+          # Cerebras Backup
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
 
-          # Venice - Uncensored Backup
+          # Venice Backup
           VENICE_API_KEY: ${{ secrets.VENICE_API_KEY }}
 
-          # GitHub Token for repo access
-          GITHUB_TOKEN: ${{ secrets.GITHUB_PRIVATE_TOKEN }}
-
         run: |
-          echo "Running OpenCode on task: ${{ steps.task.outputs.task }}"
+          echo "Task: ${{ steps.task.outputs.task }}"
 
-          # Priority 2 models for code/scripts/tools (uncensored)
-          CODE_MODELS=(
+          # Priority 2 - Uncensored models for code/scripts/tools
+          MODELS=(
             "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
             "nousresearch/hermes-3-llama-3.1-405b:free"
             "deepseek/deepseek-r1:free"
             "nvidia/nemotron-3-ultra-550b-a55b:free"
+            "minimax/minimax-m3:free"
+            "z-ai/glm-5.2:free"
             "meta-llama/llama-3.3-70b-instruct:free"
           )
 
-          # Priority 1 models for chat/info/results
-          INFO_MODELS=(
-            "minimax/minimax-m3:free"
-            "nvidia/nemotron-3-ultra-550b-a55b:free"
-            "z-ai/glm-5.2:free"
-            "google/gemma-4-31b-it:free"
-            "nvidia/nemotron-3-super-120b-a12b:free"
-          )
-
-          # Try running OpenCode with fallback
           SUCCESS=false
 
-          for MODEL in "${CODE_MODELS[@]}"; do
+          for MODEL in "${MODELS[@]}"; do
             echo "Trying model: $MODEL"
             if opencode run \
               --model "openrouter/$MODEL" \
               --print \
               "${{ steps.task.outputs.task }}" 2>/dev/null; then
               SUCCESS=true
-              echo "Success with model: $MODEL"
+              echo "Success with: $MODEL"
               break
             else
-              echo "Model $MODEL failed, trying next..."
+              echo "Failed: $MODEL — trying next..."
             fi
           done
 
           if [ "$SUCCESS" = false ]; then
-            echo "All OpenRouter models failed, trying HuggingFace..."
-            opencode run \
-              --model "huggingface/deepseek-ai/DeepSeek-R1" \
-              --print \
-              "${{ steps.task.outputs.task }}" || echo "HuggingFace also failed"
+            echo "All models failed"
+            exit 1
           fi
 
-      # Step 7: Auto commit and push to PRIVATE repo
+      # Step 8: Push changes to PRIVATE repo
       - name: Push Changes To Private Repo
+        working-directory: private-repo
         run: |
+          git remote set-url origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ secrets.PRIVATE_REPO_NAME }}.git
           git add -A
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
             git commit -m "OpenCode: ${{ steps.task.outputs.task }}
 
-            Triggered by: ${{ github.event.comment.html_url }}
-            Model: Auto-selected from free tier
-            Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+Triggered by: ${{ github.event.comment.html_url }}
+Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             git push origin HEAD
-            echo "Changes pushed successfully!"
+            echo "Changes pushed to private repo!"
           fi
 
-      # Step 8: Comment back on issue with result
+      # Step 9: Comment result back on issue
       - name: Post Result Comment
+        if: always()
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const comment = `✅ **OpenCode Task Complete!**
-
-            **Task:** ${{ steps.task.outputs.task }}
-
-            **Status:** Code written and pushed to private repo
-
-            **Next:** APK build will start automatically
-
-            *Powered by OpenRouter free models*`;
+            const success = '${{ job.status }}' === 'success';
+            const comment = success
+              ? `✅ **OpenCode Task Complete!**\n\n**Task:** ${{ steps.task.outputs.task }}\n\n**Status:** Code written and pushed to private repo ✅\n\n*Powered by OpenRouter free models*`
+              : `❌ **OpenCode Task Failed**\n\n**Task:** ${{ steps.task.outputs.task }}\n\nCheck Actions tab for details.`;
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
