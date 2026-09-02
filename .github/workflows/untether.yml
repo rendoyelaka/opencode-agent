@@ -1,0 +1,125 @@
+name: Untether Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_alive:
+        description: 'Keep alive duration in minutes'
+        required: false
+        default: '50'
+  schedule:
+    # Restart every 45 minutes to stay within GitHub Actions limits
+    - cron: '0,45 * * * *'
+
+jobs:
+  untether:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Add uv to PATH
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install OpenCode
+        run: npm install -g opencode-ai
+
+      - name: Install Untether
+        run: uv tool install untether
+
+      - name: Add uv tools to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Checkout Private Repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.PRIVATE_REPO_NAME }}
+          token: ${{ secrets.PAT_TOKEN }}
+          path: private-repo
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "opencode-bot@github.com"
+          git config --global user.name "OpenCode Bot"
+
+      - name: Create Untether Config
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          mkdir -p ~/.untether
+          cat > ~/.untether/untether.toml << EOF
+          default_engine = "opencode"
+
+          [transports.telegram]
+          bot_token = "${TELEGRAM_BOT_TOKEN}"
+          chat_id = ${TELEGRAM_CHAT_ID}
+          session_mode = "chat"
+
+          [projects.pipeline]
+          path = "${GITHUB_WORKSPACE}/private-repo"
+          default_engine = "opencode"
+
+          [cost_budget]
+          enabled = false
+          EOF
+
+      - name: Configure OpenCode With OpenRouter
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          mkdir -p ~/.config/opencode
+          cat > ~/.config/opencode/config.json << EOF
+          {
+            "providers": {
+              "openrouter": {
+                "apiKey": "${OPENROUTER_API_KEY}",
+                "baseURL": "https://openrouter.ai/api/v1"
+              }
+            },
+            "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
+          }
+          EOF
+
+      - name: Start Untether
+        env:
+          ANTHROPIC_BASE_URL: https://openrouter.ai/api
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+        working-directory: private-repo
+        run: |
+          echo "Starting Untether agent..."
+          timeout 2700 untether || true
+          echo "Untether session ended"
+
+      - name: Push Any Changes
+        working-directory: private-repo
+        run: |
+          git remote set-url origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ secrets.PRIVATE_REPO_NAME }}.git
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes to push"
+          else
+            git commit -m "OpenCode Agent: changes via Untether"
+            git push origin HEAD
+            echo "Changes pushed!"
+          fi
