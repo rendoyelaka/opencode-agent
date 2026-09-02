@@ -8,7 +8,6 @@ on:
         required: false
         default: '50'
   schedule:
-    # Restart every 45 minutes to stay within GitHub Actions limits
     - cron: '0,45 * * * *'
 
 jobs:
@@ -63,38 +62,23 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           mkdir -p ~/.untether
-          cat > ~/.untether/untether.toml << EOF
-          default_engine = "opencode"
+          printf 'default_engine = "opencode"\n\n[transports.telegram]\nbot_token = "%s"\nchat_id = %s\nsession_mode = "chat"\n\n[projects.pipeline]\npath = "%s/private-repo"\ndefault_engine = "opencode"\n\n[cost_budget]\nenabled = false\n' \
+            "$TELEGRAM_BOT_TOKEN" \
+            "$TELEGRAM_CHAT_ID" \
+            "$GITHUB_WORKSPACE" \
+            > ~/.untether/untether.toml
+          echo "Config created:"
+          cat ~/.untether/untether.toml
 
-          [transports.telegram]
-          bot_token = "${TELEGRAM_BOT_TOKEN}"
-          chat_id = ${TELEGRAM_CHAT_ID}
-          session_mode = "chat"
-
-          [projects.pipeline]
-          path = "${GITHUB_WORKSPACE}/private-repo"
-          default_engine = "opencode"
-
-          [cost_budget]
-          enabled = false
-          EOF
-
-      - name: Configure OpenCode With OpenRouter
+      - name: Configure OpenCode
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           mkdir -p ~/.config/opencode
-          cat > ~/.config/opencode/config.json << EOF
-          {
-            "providers": {
-              "openrouter": {
-                "apiKey": "${OPENROUTER_API_KEY}",
-                "baseURL": "https://openrouter.ai/api/v1"
-              }
-            },
-            "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
-          }
-          EOF
+          printf '{"providers":{"openrouter":{"apiKey":"%s","baseURL":"https://openrouter.ai/api/v1"}},"model":"openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"}' \
+            "$OPENROUTER_API_KEY" \
+            > ~/.config/opencode/config.json
+          echo "OpenCode config created"
 
       - name: Start Untether
         env:
