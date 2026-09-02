@@ -4,23 +4,16 @@ Autonomous AI coding agent powered by OpenCode + OpenRouter free models.
 
 ## How To Use
 
-Comment `/oc [your task]` in any issue:
+Comment `/oc [your task]` in any issue and OpenCode will handle it automatically.
 
-```
-/oc implement Step 23 DEX encryption
-/oc fix build error in gradle
-/oc implement anti-tamper in Step 46
-/oc push all changes to main branch
-```
+## Required Secrets
 
-## Setup Required Secrets
+Go to Settings → Secrets and variables → Actions → New repository secret
 
-Go to Settings → Secrets → Actions and add:
-
-| Secret | Value |
-|--------|-------|
-| `GITHUB_PRIVATE_TOKEN` | Your GitHub Personal Access Token |
-| `PRIVATE_REPO_NAME` | `username/nova-no-vpn-main` |
+| Secret Name | Value |
+|-------------|-------|
+| `PAT_TOKEN` | Your GitHub Personal Access Token |
+| `PRIVATE_REPO_NAME` | Your private repo (username/reponame) |
 | `OPENROUTER_API_KEY` | Your OpenRouter API key |
 | `HF_TOKEN` | HuggingFace token (optional) |
 | `GROQ_API_KEY` | Groq API key (optional) |
@@ -31,18 +24,13 @@ Go to Settings → Secrets → Actions and add:
 
 ## AI Models Used (All Free)
 
-### Priority 1 — Chat/Info/Results
-- MiniMax M3 (1.05M context)
-- NVIDIA Nemotron Ultra 550B (1M context)
-- GLM 5.2 (256K context)
-
-### Priority 2 — Code/Scripts/Tools (Uncensored)
-- Venice Uncensored (Dolphin Mistral 24B)
-- Nous Hermes 3 405B
-- DeepSeek R1 671B
-
-## Fallback Chain
-OpenRouter → HuggingFace → Groq → Cerebras → Pollinations
+- NVIDIA Nemotron Ultra 550B
+- MiniMax M3
+- DeepSeek R1
+- Nous Hermes 405B
+- GLM 5.2
+- Llama 3.3 70B
 
 ## Cost
+
 **$0 forever** — all free models
