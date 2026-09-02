@@ -62,60 +62,26 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           mkdir -p ~/.untether
-          python3 - << 'PYEOF'
-          import os
-          import toml
-          config = {
-              "default_engine": "opencode",
-              "transports": {
-                  "telegram": {
-                      "bot_token": os.environ["TELEGRAM_BOT_TOKEN"],
-                      "chat_id": int(os.environ["TELEGRAM_CHAT_ID"]),
-                      "session_mode": "chat"
-                  }
-              },
-              "projects": {
-                  "pipeline": {
-                      "path": os.path.join(os.environ["GITHUB_WORKSPACE"], "private-repo"),
-                      "default_engine": "opencode"
-                  }
-              },
-              "cost_budget": {
-                  "enabled": False
-              }
-          }
-          with open(os.path.expanduser("~/.untether/untether.toml"), "w") as f:
-              toml.dump(config, f)
-          print("Config written successfully")
-          PYEOF
-          pip install toml -q
-          python3 - << 'PYEOF'
-          import os
-          import toml
-          config = {
-              "default_engine": "opencode",
-              "transports": {
-                  "telegram": {
-                      "bot_token": os.environ["TELEGRAM_BOT_TOKEN"],
-                      "chat_id": int(os.environ["TELEGRAM_CHAT_ID"]),
-                      "session_mode": "chat"
-                  }
-              },
-              "projects": {
-                  "pipeline": {
-                      "path": os.path.join(os.environ["GITHUB_WORKSPACE"], "private-repo"),
-                      "default_engine": "opencode"
-                  }
-              },
-              "cost_budget": {
-                  "enabled": False
-              }
-          }
-          with open(os.path.expanduser("~/.untether/untether.toml"), "w") as f:
-              toml.dump(config, f)
-          print("Config written successfully")
-          PYEOF
-          echo "=== Config content ==="
+          BOT_TOKEN="$TELEGRAM_BOT_TOKEN"
+          CHAT_ID="$TELEGRAM_CHAT_ID"
+          PROJECT_PATH="$GITHUB_WORKSPACE/private-repo"
+          cat > ~/.untether/untether.toml << EOF
+          default_engine = "opencode"
+
+          [transports.telegram]
+          bot_token = "$BOT_TOKEN"
+          chat_id = $CHAT_ID
+          session_mode = "chat"
+
+          [projects.pipeline]
+          path = "$PROJECT_PATH"
+          default_engine = "opencode"
+
+          [cost_budget]
+          enabled = false
+          EOF
+          sed -i 's/^          //' ~/.untether/untether.toml
+          echo "=== Config ==="
           cat ~/.untether/untether.toml
 
       - name: Configure OpenCode
