@@ -10,11 +10,9 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  id-token: write
 
 jobs:
   opencode:
-    # Only runs when comment contains /oc or /opencode
     if: |
       contains(github.event.comment.body, '/oc') ||
       contains(github.event.comment.body, '/opencode')
@@ -22,11 +20,9 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      # Step 1: Checkout PUBLIC repo first
       - name: Checkout Public Repo
         uses: actions/checkout@v4
 
-      # Step 2: Checkout PRIVATE repo using PAT_TOKEN
       - name: Checkout Private Repo
         uses: actions/checkout@v4
         with:
@@ -35,23 +31,19 @@ jobs:
           path: private-repo
           fetch-depth: 0
 
-      # Step 3: Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # Step 4: Install OpenCode
       - name: Install OpenCode
         run: npm install -g opencode-ai
 
-      # Step 5: Configure Git
       - name: Configure Git
         run: |
           git config --global user.email "opencode-bot@github.com"
           git config --global user.name "OpenCode Bot"
 
-      # Step 6: Extract task from comment
       - name: Extract Task
         id: task
         run: |
@@ -60,31 +52,17 @@ jobs:
           echo "task=$TASK" >> $GITHUB_OUTPUT
           echo "Task extracted: $TASK"
 
-      # Step 7: Run OpenCode with free uncensored models
       - name: Run OpenCode Agent
         working-directory: private-repo
         env:
-          # OpenRouter - Primary AI (using as Anthropic replacement)
           ANTHROPIC_BASE_URL: https://openrouter.ai/api
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
           ANTHROPIC_API_KEY: ""
-
-          # HuggingFace Backup
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-
-          # Groq Backup
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-
-          # Cerebras Backup
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
-
-          # Venice Backup
           VENICE_API_KEY: ${{ secrets.VENICE_API_KEY }}
-
         run: |
-          echo "Task: ${{ steps.task.outputs.task }}"
-
-          # Priority 2 - Uncensored models for code/scripts/tools
           MODELS=(
             "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
             "nousresearch/hermes-3-llama-3.1-405b:free"
@@ -94,29 +72,22 @@ jobs:
             "z-ai/glm-5.2:free"
             "meta-llama/llama-3.3-70b-instruct:free"
           )
-
           SUCCESS=false
-
           for MODEL in "${MODELS[@]}"; do
             echo "Trying model: $MODEL"
-            if opencode run \
-              --model "openrouter/$MODEL" \
-              --print \
-              "${{ steps.task.outputs.task }}" 2>/dev/null; then
+            if opencode run --model "openrouter/$MODEL" --print "${{ steps.task.outputs.task }}" 2>/dev/null; then
               SUCCESS=true
               echo "Success with: $MODEL"
               break
             else
-              echo "Failed: $MODEL — trying next..."
+              echo "Failed: $MODEL"
             fi
           done
-
           if [ "$SUCCESS" = false ]; then
             echo "All models failed"
             exit 1
           fi
 
-      # Step 8: Push changes to PRIVATE repo
       - name: Push Changes To Private Repo
         working-directory: private-repo
         run: |
@@ -125,29 +96,24 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "OpenCode: ${{ steps.task.outputs.task }}
-
-Triggered by: ${{ github.event.comment.html_url }}
-Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git commit -m "OpenCode task completed"
             git push origin HEAD
-            echo "Changes pushed to private repo!"
+            echo "Changes pushed successfully!"
           fi
 
-      # Step 9: Comment result back on issue
       - name: Post Result Comment
         if: always()
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const success = '${{ job.status }}' === 'success';
-            const comment = success
-              ? `✅ **OpenCode Task Complete!**\n\n**Task:** ${{ steps.task.outputs.task }}\n\n**Status:** Code written and pushed to private repo ✅\n\n*Powered by OpenRouter free models*`
-              : `❌ **OpenCode Task Failed**\n\n**Task:** ${{ steps.task.outputs.task }}\n\nCheck Actions tab for details.`;
-
+            const ok = '${{ job.status }}' === 'success';
+            const msg = ok
+              ? 'OpenCode Task Complete! Code pushed to private repo.'
+              : 'OpenCode Task Failed. Check Actions tab for details.';
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: comment
+              body: msg
             });
