@@ -1,0 +1,165 @@
+name: OpenCode Agent
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  opencode:
+    # Only runs when comment contains /oc
+    if: |
+      contains(github.event.comment.body, '/oc') ||
+      contains(github.event.comment.body, '/opencode')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      # Step 1: Checkout the PRIVATE repo using your token
+      - name: Checkout Private Repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.PRIVATE_REPO_NAME }}
+          token: ${{ secrets.GITHUB_PRIVATE_TOKEN }}
+          fetch-depth: 0
+
+      # Step 2: Setup Node.js for OpenCode
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Step 3: Install OpenCode
+      - name: Install OpenCode
+        run: npm install -g opencode-ai
+
+      # Step 4: Configure Git
+      - name: Configure Git
+        run: |
+          git config --global user.email "opencode-bot@github.com"
+          git config --global user.name "OpenCode Bot"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_PRIVATE_TOKEN }}@github.com/${{ secrets.PRIVATE_REPO_NAME }}.git
+
+      # Step 5: Extract task from comment
+      - name: Extract Task
+        id: task
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          TASK=$(echo "$COMMENT" | sed 's|/oc ||g' | sed 's|/opencode ||g')
+          echo "task=$TASK" >> $GITHUB_OUTPUT
+          echo "Task extracted: $TASK"
+
+      # Step 6: Run OpenCode with Priority 1 model (Chat/Info tasks)
+      - name: Run OpenCode Agent
+        env:
+          # OpenRouter - Primary AI
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ANTHROPIC_BASE_URL: https://openrouter.ai/api
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
+
+          # HuggingFace - Backup
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+          # Groq - Fast Backup
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+          # Cerebras - High Limit Backup
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+
+          # Venice - Uncensored Backup
+          VENICE_API_KEY: ${{ secrets.VENICE_API_KEY }}
+
+          # GitHub Token for repo access
+          GITHUB_TOKEN: ${{ secrets.GITHUB_PRIVATE_TOKEN }}
+
+        run: |
+          echo "Running OpenCode on task: ${{ steps.task.outputs.task }}"
+
+          # Priority 2 models for code/scripts/tools (uncensored)
+          CODE_MODELS=(
+            "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+            "nousresearch/hermes-3-llama-3.1-405b:free"
+            "deepseek/deepseek-r1:free"
+            "nvidia/nemotron-3-ultra-550b-a55b:free"
+            "meta-llama/llama-3.3-70b-instruct:free"
+          )
+
+          # Priority 1 models for chat/info/results
+          INFO_MODELS=(
+            "minimax/minimax-m3:free"
+            "nvidia/nemotron-3-ultra-550b-a55b:free"
+            "z-ai/glm-5.2:free"
+            "google/gemma-4-31b-it:free"
+            "nvidia/nemotron-3-super-120b-a12b:free"
+          )
+
+          # Try running OpenCode with fallback
+          SUCCESS=false
+
+          for MODEL in "${CODE_MODELS[@]}"; do
+            echo "Trying model: $MODEL"
+            if opencode run \
+              --model "openrouter/$MODEL" \
+              --print \
+              "${{ steps.task.outputs.task }}" 2>/dev/null; then
+              SUCCESS=true
+              echo "Success with model: $MODEL"
+              break
+            else
+              echo "Model $MODEL failed, trying next..."
+            fi
+          done
+
+          if [ "$SUCCESS" = false ]; then
+            echo "All OpenRouter models failed, trying HuggingFace..."
+            opencode run \
+              --model "huggingface/deepseek-ai/DeepSeek-R1" \
+              --print \
+              "${{ steps.task.outputs.task }}" || echo "HuggingFace also failed"
+          fi
+
+      # Step 7: Auto commit and push to PRIVATE repo
+      - name: Push Changes To Private Repo
+        run: |
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "OpenCode: ${{ steps.task.outputs.task }}
+
+            Triggered by: ${{ github.event.comment.html_url }}
+            Model: Auto-selected from free tier
+            Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push origin HEAD
+            echo "Changes pushed successfully!"
+          fi
+
+      # Step 8: Comment back on issue with result
+      - name: Post Result Comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const comment = `✅ **OpenCode Task Complete!**
+
+            **Task:** ${{ steps.task.outputs.task }}
+
+            **Status:** Code written and pushed to private repo
+
+            **Next:** APK build will start automatically
+
+            *Powered by OpenRouter free models*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
