@@ -63,7 +63,7 @@ jobs:
         run: |
           mkdir -p ~/.untether
           python3 << PYEOF
-          import os, json
+          import os
           bot_token = os.environ['TELEGRAM_BOT_TOKEN']
           chat_id = int(os.environ['TELEGRAM_CHAT_ID'])
           workspace = os.environ['GITHUB_WORKSPACE']
@@ -72,26 +72,50 @@ jobs:
               'default_engine = "opencode"',
               '',
               '[transports.telegram]',
-              f'bot_token = "{bot_token}"',
-              f'chat_id = {chat_id}',
+              'bot_token = "' + bot_token + '"',
+              'chat_id = ' + str(chat_id),
               'session_mode = "chat"',
-              f'allowed_user_ids = [{chat_id}]',
+              'allowed_user_ids = [' + str(chat_id) + ']',
               '',
               '[projects.pipeline]',
-              f'path = "{project_path}"',
+              'path = "' + project_path + '"',
               'default_engine = "opencode"',
               '',
               '[cost_budget]',
               'enabled = false',
+              '',
+              '[preamble]',
+              'text = """',
+              'You are an expert Android/Kotlin/C++ developer and security researcher.',
+              'You have full access to this project repository.',
+              'Always read the relevant files before making changes.',
+              'Always push changes after completing a task.',
+              '',
+              'QUICK COMMANDS (type any of these):',
+              '📋 STATUS - Check current implementation status',
+              '🔍 ANALYZE - Analyze code quality and issues',
+              '🛠️ FIX - Fix any errors found',
+              '🚀 PUSH - Push all changes to GitHub',
+              '🏗️ BUILD - Trigger APK build',
+              '📊 REPORT - Give full project report',
+              '',
+              'SWITCH MODEL (type to switch):',
+              '🧠 MODEL1 - Switch to Nemotron Ultra (best reasoning)',
+              '💻 MODEL2 - Switch to DeepSeek R1 (best coding)',
+              '🔓 MODEL3 - Switch to Venice Uncensored (no restrictions)',
+              '⚡ MODEL4 - Switch to GLM 5.2 (fast responses)',
+              '',
+              'Or just type your task naturally in any language.',
+              '"""',
           ]
           config = '\n'.join(lines)
           with open(os.path.expanduser('~/.untether/untether.toml'), 'w') as f:
               f.write(config)
-          print('Config written:')
+          print('Config written successfully')
           print(config)
           PYEOF
 
-      - name: Configure OpenCode
+      - name: Configure OpenCode With OpenRouter
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
@@ -105,10 +129,11 @@ jobs:
                       'baseURL': 'https://openrouter.ai/api/v1'
                   }
               },
-              'model': 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free'
+              'model': 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free',
+              'autoapprove': True
           }
           with open(os.path.expanduser('~/.config/opencode/config.json'), 'w') as f:
-              json.dump(config, f)
+              json.dump(config, f, indent=2)
           print('OpenCode config written')
           PYEOF
 
@@ -119,6 +144,8 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          VENICE_API_KEY: ${{ secrets.VENICE_API_KEY }}
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         working-directory: private-repo
