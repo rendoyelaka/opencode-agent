@@ -62,34 +62,41 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           mkdir -p ~/.untether
-          BOT_TOKEN="$TELEGRAM_BOT_TOKEN"
-          CHAT_ID="$TELEGRAM_CHAT_ID"
-          PROJECT_PATH="$GITHUB_WORKSPACE/private-repo"
-          cat > ~/.untether/untether.toml << EOF
-          default_engine = "opencode"
-
-          [transports.telegram]
-          bot_token = "$BOT_TOKEN"
-          chat_id = $CHAT_ID
-          session_mode = "chat"
-
-          [projects.pipeline]
-          path = "$PROJECT_PATH"
-          default_engine = "opencode"
-
-          [cost_budget]
-          enabled = false
-          EOF
-          sed -i 's/^          //' ~/.untether/untether.toml
-          echo "=== Config ==="
-          cat ~/.untether/untether.toml
+          python3 << PYEOF
+          import os, json
+          bot_token = os.environ['TELEGRAM_BOT_TOKEN']
+          chat_id = int(os.environ['TELEGRAM_CHAT_ID'])
+          workspace = os.environ['GITHUB_WORKSPACE']
+          project_path = workspace + '/private-repo'
+          lines = [
+              'default_engine = "opencode"',
+              '',
+              '[transports.telegram]',
+              f'bot_token = "{bot_token}"',
+              f'chat_id = {chat_id}',
+              'session_mode = "chat"',
+              f'allowed_user_ids = [{chat_id}]',
+              '',
+              '[projects.pipeline]',
+              f'path = "{project_path}"',
+              'default_engine = "opencode"',
+              '',
+              '[cost_budget]',
+              'enabled = false',
+          ]
+          config = '\n'.join(lines)
+          with open(os.path.expanduser('~/.untether/untether.toml'), 'w') as f:
+              f.write(config)
+          print('Config written:')
+          print(config)
+          PYEOF
 
       - name: Configure OpenCode
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           mkdir -p ~/.config/opencode
-          python3 -c "
+          python3 << PYEOF
           import json, os
           config = {
               'providers': {
@@ -103,7 +110,7 @@ jobs:
           with open(os.path.expanduser('~/.config/opencode/config.json'), 'w') as f:
               json.dump(config, f)
           print('OpenCode config written')
-          "
+          PYEOF
 
       - name: Start Untether
         env:
